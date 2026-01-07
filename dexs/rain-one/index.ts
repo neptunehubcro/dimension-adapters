@@ -7,21 +7,25 @@ const rainFactory = "0xccCB3C03D9355B01883779EF15C1Be09cf3623F1"
 const enterOptionEvent = "event EnterOption(uint256 option, uint256 baseAmount, uint256 optionAmount,address indexed wallet)"
 const PoolCreatedEvent = "event PoolCreated(address indexed poolAddress, address indexed poolCreator, string uri)"
 
-
 const fetch = async (options: FetchOptions) => {
-    const dailyVolume = options.createBalances()
-    const poolCreationLogs = await options.api.getLogs({ target: rainFactory, eventAbi: PoolCreatedEvent, fromBlock: 307026817, toTimestamp: options.toTimestamp, cacheInCloud: true})
-    const pools = poolCreationLogs.map(log => log.args.poolAddress)
-    const poolsEndTime = await options.api.multiCall({ abi: "uint256:endTime", calls: pools})
-    const filteredPools = pools.filter((_, i) => poolsEndTime[i] >= options.fromTimestamp)
-    const enterOptionLogs = await options.getLogs({
-      targets: filteredPools,
-      eventAbi: enterOptionEvent
-    })
-    enterOptionLogs.forEach(log => dailyVolume.add(usdt, log.baseAmount))
-    return {
-        dailyVolume,
-    };
+  const dailyVolume = options.createBalances()
+  const poolCreationLogs = await options.getLogs({ target: rainFactory, eventAbi: PoolCreatedEvent, fromBlock: 307026817, cacheInCloud: true })
+  const pools = poolCreationLogs.map(log => log.poolAddress)
+
+  await options.streamLogs({
+    noTarget: true,
+    eventAbi: enterOptionEvent,
+    entireLog: true,
+    targetsFilter: pools,
+    processor: (logs) => {
+      console.log(`Processed ${Array.isArray(logs) ? logs.length : 1} enterOption logs`)
+      logs.forEach((log: any) => {
+        dailyVolume.add(usdt, log.args.baseAmount)
+      })
+    }
+  })
+
+  return { dailyVolume, }
 };
 
 const methodology = {
